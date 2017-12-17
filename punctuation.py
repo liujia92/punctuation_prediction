@@ -35,7 +35,7 @@ validation_percentage = 0.2
 embedding_dim = 100
 epochs = 1
 
-data_dir = '/mnt/learn_dl/data'
+data_dir = './data'
 
 
 # 获取当前时间
@@ -366,10 +366,8 @@ def train_model(model, x_train, y_train, x_val, y_val):
         output_f.write('history : {}'.format(history))
     return pred.tolist()
 
-def test_model(input_file):
-    types = textutils.text_classifier(input_file)
-    words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file = init_model_variable(types)
-    getlog().info('test text types: {}'.format(types))
+def test_model(inits, input_file):
+    words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file = inits
     getlog().info('test model...')
     test_datas, test_labels = load_data(input_file)
     word_indexs = load_word_index()
@@ -507,9 +505,9 @@ if __name__ == '__main__':
     # 通过文本类型,初始化模型参数
     words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file = init_model_variable(classifier)
     # 清理数据
-    #clear_data(data_file)
+    clear_data(data_file)
     # 格式化数据
-    #format_data(data_file + '.clean', words_pre_size)
+    format_data(data_file + '.clean', words_pre_size)
     datas, labels = load_data(data_file + '.clean.train')
     word_indexs = generate_word_index(datas)
     word_indexs = load_word_index()
@@ -518,7 +516,7 @@ if __name__ == '__main__':
     model = create_model((words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file), word_indexs)
     y_pred = train_model(model, x_train, y_train, x_val, y_val)
     compute_acc(array_to_list(y_train), y_pred)
-    y_test, y_pred = test_model(data_file + '.clean.test')
+    y_test, y_pred = test_model((words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file), data_file + '.clean.test')
     #y_test, y_pred = test_model('./data/en_punctuation_recommend_train_100W.clean.test')
     compute_acc(array_to_list(y_test), y_pred)
 
