@@ -18,17 +18,13 @@ from keras import backend as K
 import textutils
 
 punctuation_dict = {' ': 0, ',': 1, '.': 2, '!': 3, '?': 4, ':': 5, "'": 6}
-#class_weights = {0: 1, 1: 5, 2: 5, 3: 5, 4: 5, 5: 5, 6: 5}
 punctuation_count = len(punctuation_dict.keys())
 punctuation_str = ''.join(punctuation_dict.keys()).strip()
 punctuation_space_str = ''.join(punctuation_dict.keys())
 
-#word_embedding_file = 'glove.twitter.27B.100d.txt'
-#word_embedding_file = 'glove.6B.100d.txt'
 text_bin = 'classifier.bin.bin'
-#words_pre_size = 10
 
-train_size = 1000000
+train_size = 10000000
 test_percentage = 0.8
 word_index_size = 40000
 validation_percentage = 0.2
@@ -61,8 +57,8 @@ def clear_rules():
         (re.compile("(\\w+)([',.?!:])(\\w+)"), "\g<1>\g<2> \g<3>"),
         (re.compile("\\s+([',.?!:])\\s+"), "\g<1> "),
         (re.compile("\\s+"), " "),
-        (re.compile("\\w+(\.\.\.)\\w+"), "\g<1> "),
-        (re.compile("\\s(\.\.\.)\\s"), "\g<1> ")
+        (re.compile("\\w+(\.\.\.)\\w+"), ". "),
+        (re.compile("\\s(\.\.\.)\\s"), ". ")
     ]
     return filter_rules
 
@@ -96,7 +92,7 @@ def write_file(output, windows, label):
 # 对数据进行格式化
 # 一行中最后一位是标点符号
 # 输出格式： aa bb cc dd ,
-def format_data(input_file, words_pre_size):
+def format_data(input_file, train_size, words_pre_size):
     train_file = input_file + '.train'
     test_file = input_file + '.test'
     windows = []
@@ -104,11 +100,18 @@ def format_data(input_file, words_pre_size):
     datas = []
     labels = []
     is_test_value = False
-
+    print('train_size: {}'.format(train_size))
     with open(train_file, 'w') as train_f:
         with open(test_file, 'w') as test_f:
             with open(input_file, 'r') as input_f:
                 count = 0
+                total_count = 0
+                for w in input_f.readline().split(' '):
+                    total_count += 1
+                input_f.seek(0)
+                if total_count < train_size:
+                    getlog().info('total_count: {}, train_size: {}'.format(total_count, train_size))
+                    train_size = total_count
                 for word in input_f.readline().split(' '):
 
                     if len(windows) < words_pre_size:
@@ -295,7 +298,7 @@ def fbeta_score(y_true, y_pred, beta=1):
     r = recall(y_true, y_pred)
     bb = beta ** 2
     fbeta_score = (1 + bb) * (p * r) / (bb * p + r + K.epsilon())
-    getlog().info('fbeta_score: {}'.format(fbeta_score))
+    #getlog().info('fbeta_score: {}'.format(fbeta_score))
     return fbeta_score
 
 def init_model_variable(types):
@@ -305,25 +308,29 @@ def init_model_variable(types):
     dropout = 0.2
     optimizer = 'adam'
     word_embedding_file = 'glove.6B.100d.txt'
+    class_weights = None
     if 'kika' == types:
         kernel_size = 10
         dropout = 0.1
         activation = 'softmax'
         word_embedding_file = 'glove.twitter.27B.100d.txt'
+        class_weights = {0: 1.0, 1: 1.3, 2: 1.3, 3: 1.3, 4: 1.3, 5: 1.3, 6: 1.3}
     elif 'wiki' == types:
-        word_pre_size = 20
-        kernel_size = 10
-        dropout = 0.3
+        word_pre_size = 25
+        kernel_size = 15
+        dropout = 0.2
+        class_weights = {0: 1.0, 1: 2.0, 2: 2.0, 3: 2.0, 4: 2.0, 5: 2.0, 6: 1.2}
     elif 'twitter' == types:
         word_pre_size = 15
         kernel_size = 5
         dropout = 0.4
         word_embedding_file = 'glove.twitter.27B.100d.txt'
     elif 'common' == types:
-        word_pre_size = 15
-        kernel_size = 5
+        word_pre_size = 30
+        kernel_size = 15
         dropout = 0.3
-    return word_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file
+        word_embedding_file = 'glove.twitter.27B.100d.txt'
+    return word_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file, class_weights
 
 # 创建模型
 def create_model(inits, word_indexs=None):
@@ -354,16 +361,18 @@ def create_model(inits, word_indexs=None):
 
     return model
 
-def train_model(model, x_train, y_train, x_val, y_val):
+def train_model(model, class_weights, x_train, y_train, x_val, y_val):
     getlog().info('train model...')
-    #hist = model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=epochs, batch_size=128, class_weight=class_weights)
-    hist = model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=epochs, batch_size=128)
+    if class_weights:
+        hist = model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=epochs, batch_size=128, class_weight=class_weights)
+    else:
+        hist = model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=epochs, batch_size=128)
     pred = model.predict_classes(x_train, batch_size=128)
 
     model.save_weights(os.path.join(data_dir, 'model_weights.txt'))
-    history = hist.history.keys()
-    with open(os.path.join(data_dir, 'model_processing.log'), 'w') as output_f:
-        output_f.write('history : {}'.format(history))
+    #history = hist.history.keys()
+    #with open(os.path.join(data_dir, 'model_processing.log'), 'w') as output_f:
+    #    output_f.write('history : {}'.format(history))
     return pred.tolist()
 
 def test_model(inits, input_file):
@@ -495,28 +504,32 @@ if __name__ == '__main__':
     types = sys.argv[1]
     update = sys.argv[2]
     getlog().info('----------{}----------'.format(update))
-    #data_file = os.path.join(data_dir, 'mix_all.log')
-    #data_file = os.path.join(data_dir, 'mix_all_2.log')
-    #data_file = os.path.join(data_dir, 'en_punctuation_recommend_train_100W')
     
     data_file = os.path.join(data_dir, 'data_{}.txt'.format(types))
     # 获取文档类型
     classifier = textutils.text_classifier(data_file)
     # 通过文本类型,初始化模型参数
-    words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file = init_model_variable(classifier)
+    words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file, class_weights = init_model_variable(classifier)
     # 清理数据
     clear_data(data_file)
     # 格式化数据
-    format_data(data_file + '.clean', words_pre_size)
+    format_data(data_file + '.clean', train_size, words_pre_size)
     datas, labels = load_data(data_file + '.clean.train')
+    # 生成单词索引
     word_indexs = generate_word_index(datas)
     word_indexs = load_word_index()
+    # 生成单词向量 word_embedding
     padded_datas, tokenized_labels = tokenize(datas, labels, words_pre_size, word_indexs)
+    # 随机划分训练数据和验证数据
     x_train, y_train, x_val, y_val = split_train_and_validation(padded_datas, tokenized_labels)
+    # 创建模型
     model = create_model((words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file), word_indexs)
-    y_pred = train_model(model, x_train, y_train, x_val, y_val)
+    # 训练模型
+    y_pred = train_model(model, class_weights, x_train, y_train, x_val, y_val)
+    # 计算验证数据的precision 和 recall
     compute_acc(array_to_list(y_train), y_pred)
+    # 评估测试数据
     y_test, y_pred = test_model((words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file), data_file + '.clean.test')
-    #y_test, y_pred = test_model('./data/en_punctuation_recommend_train_100W.clean.test')
+    # 计算测试数据的precision 和 recall
     compute_acc(array_to_list(y_test), y_pred)
 
