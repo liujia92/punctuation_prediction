@@ -302,32 +302,32 @@ def fbeta_score(y_true, y_pred, beta=1):
     return fbeta_score
 
 def init_model_variable(types):
-    word_pre_size = 10
-    kernel_size = 3
+    word_pre_size = 15
+    kernel_size = 10
     activation = 'softmax'
     dropout = 0.2
     optimizer = 'adam'
     word_embedding_file = 'glove.6B.100d.txt'
     class_weights = None
     if 'kika' == types:
-        kernel_size = 10
+        #kernel_size = 10
         dropout = 0.1
-        activation = 'softmax'
+        #activation = 'softmax'
         word_embedding_file = 'glove.twitter.27B.100d.txt'
         class_weights = {0: 1.0, 1: 1.3, 2: 1.3, 3: 1.3, 4: 1.3, 5: 1.3, 6: 1.3}
     elif 'wiki' == types:
-        word_pre_size = 25
-        kernel_size = 15
+        #word_pre_size = 25
+        #kernel_size = 15
         dropout = 0.2
-        class_weights = {0: 1.0, 1: 2.0, 2: 2.0, 3: 2.0, 4: 2.0, 5: 2.0, 6: 1.2}
+        #class_weights = {0: 1.0, 1: 2.0, 2: 2.0, 3: 2.0, 4: 2.0, 5: 2.0, 6: 1.2}
     elif 'twitter' == types:
-        word_pre_size = 15
-        kernel_size = 5
+        #word_pre_size = 15
+        #kernel_size = 21
         dropout = 0.4
         word_embedding_file = 'glove.twitter.27B.100d.txt'
     elif 'common' == types:
-        word_pre_size = 30
-        kernel_size = 15
+        #word_pre_size = 30
+        #kernel_size = 15
         dropout = 0.3
         word_embedding_file = 'glove.twitter.27B.100d.txt'
     return word_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file, class_weights
@@ -335,7 +335,6 @@ def init_model_variable(types):
 # 创建模型
 def create_model(inits, word_indexs=None):
 
-    getlog().info('text types : {}'.format(types))
     getlog().info('create model ... ')
 
     words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file = inits
@@ -361,7 +360,7 @@ def create_model(inits, word_indexs=None):
 
     return model
 
-def train_model(model, class_weights, x_train, y_train, x_val, y_val):
+def train_model(model, classifier, class_weights, x_train, y_train, x_val, y_val):
     getlog().info('train model...')
     if class_weights:
         hist = model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=epochs, batch_size=128, class_weight=class_weights)
@@ -369,19 +368,19 @@ def train_model(model, class_weights, x_train, y_train, x_val, y_val):
         hist = model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=epochs, batch_size=128)
     pred = model.predict_classes(x_train, batch_size=128)
 
-    model.save_weights(os.path.join(data_dir, 'model_weights.txt'))
+    model.save_weights(os.path.join(data_dir, 'model_weights_{}.txt'.format(classifier)))
     #history = hist.history.keys()
     #with open(os.path.join(data_dir, 'model_processing.log'), 'w') as output_f:
     #    output_f.write('history : {}'.format(history))
     return pred.tolist()
 
-def test_model(inits, input_file):
+def test_model(inits, classifier, input_file):
     words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file = inits
     getlog().info('test model...')
     test_datas, test_labels = load_data(input_file)
     word_indexs = load_word_index()
     model = create_model((words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file))
-    model.load_weights(os.path.join(data_dir, 'model_weights.txt'))
+    model.load_weights(os.path.join(data_dir, 'model_weights_{}.txt'.format(classifier)))
     test_padded_datas, test_tokenized_labels = tokenize(test_datas, test_labels, words_pre_size, word_indexs)
     metrics_values = model.evaluate(test_padded_datas, test_tokenized_labels, 128)
     pred = model.predict_classes(test_padded_datas, batch_size=128)
@@ -501,19 +500,19 @@ if __name__ == '__main__':
     if len(sys.argv) != 3:
         print('python3 model2.py twitter "update active = sigmod"')
         exit(1)
-    types = sys.argv[1]
+    file_name = sys.argv[1]
     update = sys.argv[2]
     getlog().info('----------{}----------'.format(update))
     
-    data_file = os.path.join(data_dir, 'data_{}.txt'.format(types))
+    data_file = os.path.join(data_dir, file_name)
     # 获取文档类型
     classifier = textutils.text_classifier(data_file)
     # 通过文本类型,初始化模型参数
     words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file, class_weights = init_model_variable(classifier)
     # 清理数据
-    clear_data(data_file)
+    #clear_data(data_file)
     # 格式化数据
-    format_data(data_file + '.clean', train_size, words_pre_size)
+    #format_data(data_file + '.clean', train_size, words_pre_size)
     datas, labels = load_data(data_file + '.clean.train')
     # 生成单词索引
     word_indexs = generate_word_index(datas)
@@ -525,11 +524,11 @@ if __name__ == '__main__':
     # 创建模型
     model = create_model((words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file), word_indexs)
     # 训练模型
-    y_pred = train_model(model, class_weights, x_train, y_train, x_val, y_val)
+    y_pred = train_model(model, classifier, class_weights, x_train, y_train, x_val, y_val)
     # 计算验证数据的precision 和 recall
     compute_acc(array_to_list(y_train), y_pred)
     # 评估测试数据
-    y_test, y_pred = test_model((words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file), data_file + '.clean.test')
+    y_test, y_pred = test_model((words_pre_size, kernel_size, activation, dropout, optimizer, word_embedding_file), classifier, data_file + '.clean.test')
     # 计算测试数据的precision 和 recall
     compute_acc(array_to_list(y_test), y_pred)
 
